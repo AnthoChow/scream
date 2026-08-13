@@ -83,17 +83,18 @@ html, body {
 
 .editor-tile {
   position: absolute;
-  background: var(--tile-bg);
-  border: 1px solid var(--accent);
+  background: transparent;
+  border: none;
   padding: 5px 11px;
   border-radius: 2px;
   font-size: 17px;
   font-family: 'EB Garamond', Georgia, serif;
   color: var(--ink);
-  box-shadow: 0 2px 8px rgba(30,25,15,0.25);
+  box-shadow: none;
   outline: none;
   min-width: 24px;
   z-index: 100;
+  caret-color: var(--accent);
 }
 
 #hint {
@@ -131,16 +132,25 @@ html, body {
 #btn-random { left: 18px; }
 #btn-about { right: 18px; }
 
-#count-badge {
+#btn-save { left: 50%; transform: translateX(-50%); }
+
+#toast {
   position: fixed;
-  bottom: 18px;
+  bottom: 58px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 12px;
   color: var(--ink-soft);
-  z-index: 200;
+  background: var(--tile-bg);
+  border: 1px solid var(--tile-border);
+  padding: 5px 12px;
+  border-radius: 3px;
+  z-index: 250;
+  opacity: 0;
   pointer-events: none;
+  transition: opacity 250ms;
 }
+#toast.show { opacity: 1; }
 
 #about-modal {
   position: fixed;
@@ -197,8 +207,9 @@ html, body {
     <div id="canvas-inner"></div>
   </div>
   <div id="hint">click anywhere on the page to write &middot; drag to explore</div>
-  <div id="btn-random" class="ui-btn">Random word</div>
-  <div id="count-badge"></div>
+  <div id="btn-random" class="ui-btn">Random location</div>
+  <div id="btn-save" class="ui-btn">Save location</div>
+  <div id="toast"></div>
   <div id="btn-about" class="ui-btn">About</div>
 
   <div id="about-modal">
@@ -235,7 +246,7 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY") {
   const viewport = document.getElementById('canvas-viewport');
   const inner = document.getElementById('canvas-inner');
   const hint = document.getElementById('hint');
-  const countBadge = document.getElementById('count-badge');
+  const toast = document.getElementById('toast');
   const aboutModal = document.getElementById('about-modal');
 
   const CANVAS_W = 6000;
@@ -244,8 +255,17 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY") {
   let activeEditor = null;
 
   // panX/panY = pixel offset of the canvas inside the viewport (translate, not scroll)
-  let panX = -(CANVAS_W / 2 - viewport.clientWidth / 2);
-  let panY = -(CANVAS_H / 2 - viewport.clientHeight / 2);
+  const params = new URLSearchParams(window.location.search);
+  let panX, panY;
+  if (params.has('x') && params.has('y')) {
+    const savedX = parseFloat(params.get('x'));
+    const savedY = parseFloat(params.get('y'));
+    panX = -(savedX - viewport.clientWidth / 2);
+    panY = -(savedY - viewport.clientHeight / 2);
+  } else {
+    panX = -(CANVAS_W / 2 - viewport.clientWidth / 2);
+    panY = -(CANVAS_H / 2 - viewport.clientHeight / 2);
+  }
 
   function clampPan() {
     const minX = Math.min(0, viewport.clientWidth - CANVAS_W);
@@ -274,8 +294,12 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY") {
 
   function randRot() { return (Math.random() * 5 - 2.5).toFixed(2); }
 
-  function updateCount() {
-    countBadge.textContent = notes.size + (notes.size === 1 ? ' word left so far' : ' words left so far');
+  let toastTimer = null;
+  function showToast(text) {
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
   }
 
   function renderTile(id, note) {
@@ -301,7 +325,6 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY") {
     const el = document.getElementById('tile-' + id);
     if (el) el.remove();
     notes.delete(id);
-    updateCount();
     notesRef.doc(id).delete().catch(() => {});
   }
 
@@ -396,23 +419,33 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY") {
   });
 
   document.getElementById('btn-random').addEventListener('click', () => {
-    const ids = Array.from(notes.keys());
-    if (ids.length === 0) return;
-    const id = ids[Math.floor(Math.random() * ids.length)];
-    const note = notes.get(id);
-    const targetX = -(note.x - viewport.clientWidth / 2);
-    const targetY = -(note.y - viewport.clientHeight / 2);
+    const targetCanvasX = Math.random() * CANVAS_W;
+    const targetCanvasY = Math.random() * CANVAS_H;
+    const targetX = -(targetCanvasX - viewport.clientWidth / 2);
+    const targetY = -(targetCanvasY - viewport.clientHeight / 2);
     inner.style.transition = 'transform 500ms ease-out';
     panX = targetX;
     panY = targetY;
     applyTransform();
     setTimeout(() => { inner.style.transition = ''; }, 520);
-    const el = document.getElementById('tile-' + id);
-    if (el) {
-      el.style.transition = 'box-shadow 200ms';
-      el.style.boxShadow = '0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,0.2)';
-      setTimeout(() => { el.style.boxShadow = ''; }, 1600);
+  });
+
+  document.getElementById('btn-save').addEventListener('click', () => {
+    const centerX = Math.round(-panX + viewport.clientWidth / 2);
+    const centerY = Math.round(-panY + viewport.clientHeight / 2);
+    const url = new URL(window.location.href);
+    url.searchParams.set('x', centerX);
+    url.searchParams.set('y', centerY);
+    const link = url.toString();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(
+        () => showToast('Location link copied'),
+        () => showToast(link)
+      );
+    } else {
+      showToast(link);
     }
+    window.history.replaceState({}, '', link);
   });
 
   document.getElementById('btn-about').addEventListener('click', () => aboutModal.classList.add('open'));
@@ -433,7 +466,6 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY") {
         renderTile(id, note);
       }
     });
-    updateCount();
   }, (err) => console.error('listen failed', err));
 }
 </script>
