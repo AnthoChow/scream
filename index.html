@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>a page anyone can write on</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital@0;1&display=swap');
+
+:root {
+  --paper: #f2f0eb;
+  --paper-edge: #e5e2da;
+  --ink: #2b2926;
+  --ink-soft: #6b6660;
+  --tile-bg: #ffffff;
+  --tile-border: #dcd8cf;
+  --accent: #b5502f;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  font-family: 'EB Garamond', Georgia, 'Times New Roman', serif;
+}
+
+#wordwall-root {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#canvas-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  background-color: var(--paper);
+  background-image: radial-gradient(var(--paper-edge) 0.6px, transparent 0.6px);
+  background-size: 22px 22px;
+  background-position: 0 0;
+}
+#canvas-viewport.dragging { cursor: grabbing; }
+
+#canvas-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6000px;
+  height: 4000px;
+  will-change: transform;
+}
+
+.tile {
+  position: absolute;
+  background: var(--tile-bg);
+  border: 1px solid var(--tile-border);
+  padding: 5px 11px;
+  border-radius: 2px;
+  font-size: 17px;
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(30,25,15,0.12), 0 1px 0 rgba(255,255,255,0.6) inset;
+  white-space: pre;
+  cursor: default;
+  user-select: none;
+  transform-origin: center;
+  animation: tile-in 260ms ease-out;
+}
+.tile:hover {
+  box-shadow: 0 2px 6px rgba(30,25,15,0.22), 0 1px 0 rgba(255,255,255,0.6) inset;
+  z-index: 50;
+}
+@keyframes tile-in {
+  from { transform: scale(0.85) rotate(var(--rot)); opacity: 0; }
+  to { transform: scale(1) rotate(var(--rot)); opacity: 1; }
+}
+
+.editor-tile {
+  position: absolute;
+  background: var(--tile-bg);
+  border: 1px solid var(--accent);
+  padding: 5px 11px;
+  border-radius: 2px;
+  font-size: 17px;
+  font-family: 'EB Garamond', Georgia, serif;
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(30,25,15,0.25);
+  outline: none;
+  min-width: 24px;
+  z-index: 100;
+}
+
+#hint {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  background: rgba(242,240,235,0.9);
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--paper-edge);
+  pointer-events: none;
+  transition: opacity 400ms;
+  z-index: 200;
+}
+
+.ui-btn {
+  position: fixed;
+  bottom: 18px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: var(--tile-bg);
+  border: 1px solid var(--tile-border);
+  padding: 7px 13px;
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(30,25,15,0.1);
+  z-index: 200;
+  font-family: 'EB Garamond', Georgia, serif;
+}
+.ui-btn:hover { border-color: var(--accent); color: var(--accent); }
+#btn-random { left: 18px; }
+#btn-about { right: 18px; }
+
+#count-badge {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: var(--ink-soft);
+  z-index: 200;
+  pointer-events: none;
+}
+
+#about-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(30,25,15,0.35);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+#about-modal.open { display: flex; }
+#about-card {
+  background: var(--tile-bg);
+  max-width: 380px;
+  padding: 26px 28px;
+  border-radius: 4px;
+  border: 1px solid var(--tile-border);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+#about-card h2 { margin: 0 0 10px; font-weight: 400; font-style: italic; color: var(--accent); }
+#about-card p { margin: 0 0 14px; }
+#about-close { font-size: 13px; color: var(--ink-soft); cursor: pointer; text-decoration: underline; }
+
+#setup-warning {
+  position: fixed;
+  inset: 0;
+  background: var(--paper);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  text-align: center;
+}
+#setup-warning.show { display: flex; }
+#setup-warning div { max-width: 420px; line-height: 1.5; }
+#setup-warning code { background: #eee; padding: 2px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="setup-warning">
+  <div>
+    <h2 style="font-weight:400;font-style:italic;color:var(--accent);">almost there</h2>
+    <p>This page needs your Firebase project keys pasted into the <code>firebaseConfig</code> object near the bottom of <code>index.html</code> before it will work. See the setup steps you were given alongside this file.</p>
+  </div>
+</div>
+
+<div id="wordwall-root">
+  <div id="canvas-viewport">
+    <div id="canvas-inner"></div>
+  </div>
+  <div id="hint">click anywhere on the page to write &middot; drag to explore</div>
+  <div id="btn-random" class="ui-btn">Random word</div>
+  <div id="count-badge"></div>
+  <div id="btn-about" class="ui-btn">About</div>
+
+  <div id="about-modal">
+    <div id="about-card">
+      <h2>a page anyone can write on</h2>
+      <p>Click anywhere on the paper and type. Press Enter to leave your words. Everyone who opens this page sees the same wall, growing however people leave it.</p>
+      <p>Double-click a tile to remove it.</p>
+      <div id="about-close">close</div>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase (free tier) powers the shared storage so every visitor sees the same wall -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCK9irWQLnVNw75uWXEO6G6B1Ii9zDGHKY",
+  authDomain: "word-wall-7d5bc.firebaseapp.com",
+  projectId: "word-wall-7d5bc",
+  storageBucket: "word-wall-7d5bc.firebasestorage.app",
+  messagingSenderId: "32390378439",
+  appId: "1:32390378439:web:a59a067bd2f1d25456dfe2"
+};
+
+if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+  document.getElementById('setup-warning').classList.add('show');
+} else {
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const notesRef = db.collection('notes');
+
+  const viewport = document.getElementById('canvas-viewport');
+  const inner = document.getElementById('canvas-inner');
+  const hint = document.getElementById('hint');
+  const countBadge = document.getElementById('count-badge');
+  const aboutModal = document.getElementById('about-modal');
+
+  const CANVAS_W = 6000;
+  const CANVAS_H = 4000;
+  const notes = new Map();
+  let activeEditor = null;
+
+  // panX/panY = pixel offset of the canvas inside the viewport (translate, not scroll)
+  let panX = -(CANVAS_W / 2 - viewport.clientWidth / 2);
+  let panY = -(CANVAS_H / 2 - viewport.clientHeight / 2);
+
+  function clampPan() {
+    const minX = Math.min(0, viewport.clientWidth - CANVAS_W);
+    const minY = Math.min(0, viewport.clientHeight - CANVAS_H);
+    panX = Math.max(minX, Math.min(0, panX));
+    panY = Math.max(minY, Math.min(0, panY));
+  }
+
+  function applyTransform() {
+    clampPan();
+    inner.style.transform = 'translate(' + panX + 'px, ' + panY + 'px)';
+    viewport.style.backgroundPosition = panX + 'px ' + panY + 'px';
+  }
+  applyTransform();
+
+  // convert a viewport-relative screen point to canvas coordinates
+  function toCanvasCoords(clientX, clientY) {
+    const rect = viewport.getBoundingClientRect();
+    return {
+      x: clientX - rect.left - panX,
+      y: clientY - rect.top - panY
+    };
+  }
+
+  setTimeout(() => { hint.style.opacity = '0'; }, 4000);
+
+  function randRot() { return (Math.random() * 5 - 2.5).toFixed(2); }
+
+  function updateCount() {
+    countBadge.textContent = notes.size + (notes.size === 1 ? ' word left so far' : ' words left so far');
+  }
+
+  function renderTile(id, note) {
+    let el = document.getElementById('tile-' + id);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'tile';
+      el.id = 'tile-' + id;
+      inner.appendChild(el);
+      el.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        removeNote(id);
+      });
+    }
+    el.style.left = note.x + 'px';
+    el.style.top = note.y + 'px';
+    el.style.setProperty('--rot', note.rot + 'deg');
+    el.style.transform = 'rotate(' + note.rot + 'deg)';
+    el.textContent = note.text;
+  }
+
+  function removeNote(id) {
+    const el = document.getElementById('tile-' + id);
+    if (el) el.remove();
+    notes.delete(id);
+    updateCount();
+    notesRef.doc(id).delete().catch(() => {});
+  }
+
+  function closeEditor(commit) {
+    if (!activeEditor) return;
+    const { el, x, y, rot } = activeEditor;
+    const text = el.textContent.trim();
+    el.remove();
+    activeEditor = null;
+    if (commit && text) {
+      const note = { x, y, text, rot: parseFloat(rot) };
+      notesRef.add(note).catch((e) => console.error('save failed', e));
+    }
+  }
+
+  function openEditorAt(x, y) {
+    if (activeEditor) closeEditor(true);
+    hint.style.opacity = '0';
+    const rot = randRot();
+    const el = document.createElement('div');
+    el.className = 'editor-tile';
+    el.contentEditable = 'true';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.transform = 'rotate(' + rot + 'deg)';
+    inner.appendChild(el);
+    activeEditor = { el, x, y, rot };
+
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); closeEditor(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeEditor(false); }
+    });
+    el.addEventListener('blur', () => closeEditor(true));
+    requestAnimationFrame(() => el.focus());
+  }
+
+  let downX = 0, downY = 0, isDown = false, isDragging = false;
+  let startPanX = 0, startPanY = 0;
+  const DRAG_THRESHOLD = 5;
+
+  function dragStart(clientX, clientY, target) {
+    if (target.closest('.tile') || target.closest('.editor-tile')) return;
+    isDown = true;
+    isDragging = false;
+    downX = clientX;
+    downY = clientY;
+    startPanX = panX;
+    startPanY = panY;
+  }
+
+  function dragMove(clientX, clientY) {
+    if (!isDown) return;
+    const dx = clientX - downX;
+    const dy = clientY - downY;
+    if (!isDragging && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      isDragging = true;
+      viewport.classList.add('dragging');
+    }
+    if (isDragging) {
+      panX = startPanX + dx;
+      panY = startPanY + dy;
+      applyTransform();
+    }
+  }
+
+  function dragEnd(clientX, clientY, target) {
+    if (!isDown) return;
+    isDown = false;
+    viewport.classList.remove('dragging');
+    if (!isDragging && !target.closest('.tile') && !target.closest('.editor-tile')) {
+      const { x, y } = toCanvasCoords(clientX, clientY);
+      openEditorAt(x - 10, y - 12);
+    }
+    isDragging = false;
+  }
+
+  viewport.addEventListener('mousedown', (e) => dragStart(e.clientX, e.clientY, e.target));
+  window.addEventListener('mousemove', (e) => dragMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', (e) => dragEnd(e.clientX, e.clientY, e.target));
+
+  viewport.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    dragStart(t.clientX, t.clientY, e.target);
+  }, { passive: true });
+  viewport.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    dragMove(t.clientX, t.clientY);
+  }, { passive: true });
+  viewport.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0];
+    dragEnd(t.clientX, t.clientY, e.target);
+  });
+
+  document.getElementById('btn-random').addEventListener('click', () => {
+    const ids = Array.from(notes.keys());
+    if (ids.length === 0) return;
+    const id = ids[Math.floor(Math.random() * ids.length)];
+    const note = notes.get(id);
+    const targetX = -(note.x - viewport.clientWidth / 2);
+    const targetY = -(note.y - viewport.clientHeight / 2);
+    inner.style.transition = 'transform 500ms ease-out';
+    panX = targetX;
+    panY = targetY;
+    applyTransform();
+    setTimeout(() => { inner.style.transition = ''; }, 520);
+    const el = document.getElementById('tile-' + id);
+    if (el) {
+      el.style.transition = 'box-shadow 200ms';
+      el.style.boxShadow = '0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,0.2)';
+      setTimeout(() => { el.style.boxShadow = ''; }, 1600);
+    }
+  });
+
+  document.getElementById('btn-about').addEventListener('click', () => aboutModal.classList.add('open'));
+  document.getElementById('about-close').addEventListener('click', () => aboutModal.classList.remove('open'));
+  aboutModal.addEventListener('click', (e) => { if (e.target === aboutModal) aboutModal.classList.remove('open'); });
+
+  // realtime sync: every visitor's browser gets updates the instant anyone adds/removes a word
+  notesRef.onSnapshot((snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      const id = change.doc.id;
+      if (change.type === 'removed') {
+        const el = document.getElementById('tile-' + id);
+        if (el) el.remove();
+        notes.delete(id);
+      } else {
+        const note = change.doc.data();
+        notes.set(id, note);
+        renderTile(id, note);
+      }
+    });
+    updateCount();
+  }, (err) => console.error('listen failed', err));
+}
+</script>
+</body>
+</html>
